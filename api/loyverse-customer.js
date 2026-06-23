@@ -28,20 +28,40 @@ export default async function handler(req, res) {
   }
 
   try {
-    const loyverseUrl = `https://api.loyverse.com/v1.0/customers?customer_code=${encodeURIComponent(dni)}`;
+    const dniLimpio = dni.trim();
+    let cursor = null;
+    let match = null;
+    let paginas = 0;
+    const MAX_PAGINAS = 40; // tope de seguridad (40 x 50 = 2000 clientes revisados como maximo)
 
-    const loyverseRes = await fetch(loyverseUrl, {
-      headers: { Authorization: `Bearer ${LOYVERSE_TOKEN}` }
-    });
+    do {
+      let loyverseUrl = `https://api.loyverse.com/v1.0/customers?customer_code=${encodeURIComponent(dniLimpio)}&limit=50`;
+      if (cursor) {
+        loyverseUrl += `&cursor=${encodeURIComponent(cursor)}`;
+      }
 
-    const data = await loyverseRes.json();
+      const loyverseRes = await fetch(loyverseUrl, {
+        headers: { Authorization: `Bearer ${LOYVERSE_TOKEN}` }
+      });
 
-    if (!loyverseRes.ok) {
-      res.status(loyverseRes.status).json(data);
-      return;
-    }
+      const data = await loyverseRes.json();
 
-    res.status(200).json(data);
+      if (!loyverseRes.ok) {
+        res.status(loyverseRes.status).json(data);
+        return;
+      }
+
+      const customers = data.customers || [];
+      match = customers.find(c => c.customer_code === dniLimpio);
+
+      cursor = data.cursor || null;
+      paginas++;
+
+      if (match) break;
+
+    } while (cursor && paginas < MAX_PAGINAS);
+
+    res.status(200).json({ customers: match ? [match] : [] });
 
   } catch (err) {
     res.status(500).json({ error: "Error consultando Loyverse", details: String(err) });
